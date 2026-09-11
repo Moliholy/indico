@@ -287,7 +287,8 @@ def load_config(only_defaults=False, override=None):
         plugin_pending.update(plugin)
     # ``pending`` and ``resolved`` are mutable on purpose: plugins move their keys from the former
     # to the latter (via ``register_plugin_config``) after this immutable config is already built.
-    data['PLUGIN_CONFIG'] = {'pending': plugin_pending, 'resolved': {}}
+    # ``owners`` maps each resolved key to the plugin that claimed it.
+    data['PLUGIN_CONFIG'] = {'pending': plugin_pending, 'resolved': {}, 'owners': {}}
     _postprocess_config(data)
     if not only_defaults:
         _validate_config(data)
@@ -396,10 +397,11 @@ class IndicoConfig:
         already imported. Declared defaults are applied for keys omitted from the config
         file, and any values collected during :func:`load_config` are consumed here.
         Collisions with a core key are warned about and the plugin default is ignored;
-        collisions between plugins raise ``RuntimeError``.
+        collisions between plugins raise ``RuntimeError``. Registering the same plugin
+        again is a no-op, so a plugin initialized more than once keeps its values.
         """
         store = self.data['PLUGIN_CONFIG']
-        pending, resolved = store['pending'], store['resolved']
+        pending, resolved, owners = store['pending'], store['resolved'], store['owners']
         prefix = f'{PLUGIN_CONFIG_PREFIX}{plugin.name.upper()}'
         for key, default in plugin.plugin_config_defaults.items():
             full = f'{prefix}_{key}'
@@ -407,8 +409,12 @@ class IndicoConfig:
                 warnings.warn(f'Plugin {plugin.name!r} config key {full!r} collides with a core config key; '
                               f'plugin default ignored', stacklevel=2)
                 continue
-            if full in resolved:
+            owner = owners.get(full)
+            if owner == plugin.name:
+                continue
+            if owner is not None:
                 raise RuntimeError(f'Plugin {plugin.name!r} config key {full!r} collides with another plugin')
+            owners[full] = plugin.name
             resolved[full] = pending.pop(full, default)
 
     def __getattr__(self, name):

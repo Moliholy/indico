@@ -63,6 +63,17 @@ def test_register_plugin_config_applies_default_when_absent(write_config):
     assert _resolved(cfg.data)['PLUGIN_DEMO_TIMEOUT'] == 30
 
 
+def test_register_plugin_config_twice_keeps_value(write_config):
+    write_config("PLUGINS = {'demo'}\nPLUGIN_DEMO_API_KEY = 'secret'\n")
+    cfg = IndicoConfig(load_config())
+    plugin = _FakePlugin('demo', {'API_KEY': None})
+    cfg.register_plugin_config(plugin)
+    # A plugin may be initialized again (e.g. a second app in the same process); the
+    # value claimed on the first init must survive and not turn into a collision.
+    cfg.register_plugin_config(plugin)
+    assert _resolved(cfg.data) == {'PLUGIN_DEMO_API_KEY': 'secret'}
+
+
 def test_plugin_key_precedence_override_wins(write_config):
     write_config("PLUGINS = {'demo'}\nPLUGIN_DEMO_API_KEY = 'fromfile'\n")
     data = load_config(override={'PLUGIN_DEMO_API_KEY': 'fromoverride'})
